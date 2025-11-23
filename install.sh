@@ -1,55 +1,37 @@
 #!/bin/bash
-# ==========================================================
-#  ZIPVPN PRO PANEL v4
-#  Fully Automated Installer
-#  By: JP_OFFICIAL
-# ==========================================================
+# ZIPVPN PRO PANEL v4 – Installer FINAL
+# By: JP_OFFICIAL
 
-set -euo pipefail
+set -e
 
-ZIVPN_BIN="/usr/local/bin/zivpn"
-ZIVPN_DIR="/etc/zivpn"
-ZIVPN_CFG="${ZIVPN_DIR}/config.json"
-ZIVPN_SVC="zivpn.service"
-
-ADMIN_DIR="/opt/zivpn-admin"
-VENV="${ADMIN_DIR}/venv"
-ENV_FILE="${ADMIN_DIR}/.env"
-PANEL_SVC="zivpn-admin.service"
-
-clear
-echo "============================================"
-echo "        ZIPVPN PRO v4 INSTALLER"
-echo "        By JP_OFFICIAL"
-echo "============================================"
-sleep 2
+PANEL_PORT=8088
+ADMIN_USER="jp"
+ADMIN_PASS="89"
 
 echo "[1] Updating system..."
-apt-get update -y
-apt-get install -y python3 python3-venv python3-pip curl jq git ufw
+apt update -y && apt upgrade -y
+apt install -y curl unzip python3 python3-venv python3-pip ufw
 
-echo "[2] Installing ZIPVPN binary..."
-mkdir -p $ZIVPN_DIR
-curl -L -o $ZIVPN_BIN https://github.com/zipvpn/zipvpn/releases/latest/download/zivpn-linux-amd64
-chmod +x $ZIVPN_BIN
+echo "[2] Installing ZIVPN binary..."
+wget -qO /usr/local/bin/zivpn https://raw.githubusercontent.com/Jpstore1/ZIPVPN_PRO/main/zivpn
+chmod +x /usr/local/bin/zivpn
 
-echo "[3] Generating server config..."
-cat > $ZIVPN_CFG <<EOF
+mkdir -p /etc/zivpn
+cat <<EOF >/etc/zivpn/config.json
 {
-  "listen": ":9000",
-  "protocol": "udp",
-  "key": "$(openssl rand -hex 32)"
+  "listen": ":7000",
+  "protocol": "udp"
 }
 EOF
 
-echo "[4] Creating systemd service..."
-cat > /etc/systemd/system/$ZIVPN_SVC <<EOF
+echo "[3] Creating ZIVPN service..."
+cat <<EOF >/etc/systemd/system/zivpn.service
 [Unit]
-Description=ZIPVPN Core
+Description=ZIPVPN UDP Server
 After=network.target
 
 [Service]
-ExecStart=$ZIVPN_BIN -c $ZIVPN_CFG
+ExecStart=/usr/local/bin/zivpn -c /etc/zivpn/config.json
 Restart=always
 
 [Install]
@@ -57,33 +39,38 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now $ZIVPN_SVC
+systemctl enable --now zivpn
 
-echo "[5] Installing JP PRO PANEL..."
-rm -rf $ADMIN_DIR
-git clone https://github.com/Jpstore1/ZIPVPN_PANEL_PRO_V4 $ADMIN_DIR
+echo "[4] Installing JP PRO PANEL v4..."
+rm -rf /opt/zivpn-admin
+mkdir -p /opt/zivpn-admin
 
-cd $ADMIN_DIR
-python3 -m venv $VENV
-source $VENV/bin/activate
-pip install -r requirements.txt
+wget -qO /opt/panel.zip https://github.com/Jpstore1/ZIPVPN_PANEL_PRO_V4/archive/refs/heads/main.zip
+unzip -qo /opt/panel.zip -d /opt/
+mv /opt/ZIPVPN_PANEL_PRO_V4-main/* /opt/zivpn-admin/
+rm -rf /opt/panel.zip /opt/ZIPVPN_PANEL_PRO_V4-main
 
-echo "[6] Creating panel environment..."
-cat > $ENV_FILE <<EOF
-PANEL_PORT=8088
-ADMIN_USER=jp
-ADMIN_PASS=89
+echo "[5] Creating Python venv..."
+python3 -m venv /opt/zivpn-admin/venv
+source /opt/zivpn-admin/venv/bin/activate
+pip install -q -r /opt/zivpn-admin/requirements.txt
+
+echo "[6] Creating Panel ENV..."
+cat <<EOF >/opt/zivpn-admin/.env
+PANEL_PORT=$PANEL_PORT
+ADMIN_USER=$ADMIN_USER
+ADMIN_PASS=$ADMIN_PASS
 EOF
 
-echo "[7] Creating panel service..."
-cat > /etc/systemd/system/$PANEL_SVC <<EOF
+echo "[7] Creating Panel Service..."
+cat <<EOF >/etc/systemd/system/zivpn-panel.service
 [Unit]
-Description=ZIPVPN PRO Panel
+Description=ZIPVPN PRO PANEL v4
 After=network.target
 
 [Service]
-WorkingDirectory=$ADMIN_DIR
-ExecStart=$VENV/bin/python3 app.py
+WorkingDirectory=/opt/zivpn-admin
+ExecStart=/opt/zivpn-admin/venv/bin/python3 app.py
 Restart=always
 
 [Install]
@@ -91,18 +78,15 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now $PANEL_SVC
+systemctl enable --now zivpn-panel
 
-echo "[8] Opening ports..."
-ufw allow 9000/udp
-ufw allow 8088/tcp
+echo "[8] Setting firewall..."
+ufw allow $PANEL_PORT
+ufw allow 7000/udp
 
-echo ""
-echo "============================================"
-echo " ZIPVPN PRO PANEL v4 Installed Successfully!"
-echo ""
-echo " PANEL URL  : http://IPVPS:8088"
-echo " USER       : jp"
-echo " PASS       : 89"
-echo " CORE PORT  : 9000 UDP"
-echo "============================================"
+echo "========================================="
+echo " ZIPVPN PRO PANEL v4 INSTALLED SUCCESS!"
+echo " PANEL URL : http://YOUR-IP:$PANEL_PORT"
+echo " USER      : $ADMIN_USER"
+echo " PASS      : $ADMIN_PASS"
+echo "========================================="
